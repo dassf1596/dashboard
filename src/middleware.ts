@@ -42,36 +42,30 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    // Check if user is admin
-    const { data: adminUser } = await supabase
+    // Check admin_users table
+    const { data: adminList } = await supabase
       .from("admin_users")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
+      .select("user_id");
 
-    if (!adminUser) {
-      // Not an admin - sign out and redirect
-      await supabase.auth.signOut();
-      const url = request.nextUrl.clone();
-      url.pathname = "/login";
-      url.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(url);
+    // If admin_users has records, verify user is in the list
+    if (adminList && adminList.length > 0) {
+      const isAdmin = adminList.some((admin) => admin.user_id === user.id);
+      if (!isAdmin) {
+        // Not an admin - sign out and redirect
+        await supabase.auth.signOut();
+        const url = request.nextUrl.clone();
+        url.pathname = "/login";
+        url.searchParams.set("error", "unauthorized");
+        return NextResponse.redirect(url);
+      }
     }
   }
 
   // If logged in admin visits login page, redirect to dashboard
   if (request.nextUrl.pathname === "/login" && user) {
-    const { data: adminUser } = await supabase
-      .from("admin_users")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (adminUser) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/dashboard";
-      return NextResponse.redirect(url);
-    }
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
+    return NextResponse.redirect(url);
   }
 
   return supabaseResponse;

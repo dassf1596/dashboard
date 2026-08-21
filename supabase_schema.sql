@@ -152,6 +152,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Drop old policies if they exist before recreating (avoids "policy already exists" error)
 DROP POLICY IF EXISTS "Admins can view admin_users list" ON public.admin_users;
+DROP POLICY IF EXISTS "Admins or initial user can insert admin_users" ON public.admin_users;
 DROP POLICY IF EXISTS "Admins have full access to users_profile" ON public.users_profile;
 DROP POLICY IF EXISTS "Admins have full access to chat_logs" ON public.chat_logs;
 DROP POLICY IF EXISTS "Admins have full access to system_settings" ON public.system_settings;
@@ -161,6 +162,14 @@ DROP POLICY IF EXISTS "Service and n8n read access to system_settings" ON public
 CREATE POLICY "Admins can view admin_users list"
   ON public.admin_users FOR SELECT
   USING (public.is_admin() OR auth.uid() = user_id);
+
+CREATE POLICY "Admins or initial user can insert admin_users"
+  ON public.admin_users FOR INSERT
+  WITH CHECK (
+    auth.uid() = user_id OR
+    public.is_admin() OR
+    NOT EXISTS (SELECT 1 FROM public.admin_users)
+  );
 
 -- Policies for users_profile
 CREATE POLICY "Admins have full access to users_profile"
