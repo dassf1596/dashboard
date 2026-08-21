@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { loginAction } from "./actions";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,22 +12,82 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Layers, AlertTriangle, AlertCircle, Loader2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 function LoginForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
   const searchParams = useSearchParams();
   const unauthorized = searchParams.get("error") === "unauthorized";
 
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
     setLoading(true);
     setError(null);
-    const result = await loginAction(formData);
-    if (result?.error) {
-      setError(result.error);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setError("กรุณากรอก Email และ Password");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const supabase = createClient();
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email: cleanEmail,
+        password: password,
+      });
+
+      if (authError) {
+        if (authError.message.toLowerCase().includes("email not confirmed")) {
+          setError("Email นี้ยังไม่ได้รับการยืนยัน (ไปที่ Supabase -> Authentication -> Users แล้วกด Confirm Email)");
+        } else if (authError.message.toLowerCase().includes("invalid login credentials")) {
+          setError("Email หรือ Password ไม่ถูกต้อง");
+        } else {
+          setError(authError.message);
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Check admin status
+      if (data?.user) {
+        const { data: adminUser, error: adminErr } = await supabase
+          .from("admin_users")
+          .select("id")
+          .eq("user_id", data.user.id)
+          .maybeSingle();
+
+        if (adminErr) {
+          console.error("Admin check error:", adminErr);
+        }
+
+        // If not admin, warn user
+        if (!adminUser) {
+          // Check if admin_users is empty, if so allow auto-insert
+          const { count } = await supabase
+            .from("admin_users")
+            .select("*", { count: "exact", head: true });
+
+          if (count === 0) {
+            await supabase.from("admin_users").insert({
+              user_id: data.user.id,
+              email: data.user.email || cleanEmail,
+            });
+          }
+        }
+      }
+
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาดในการเข้าสู่ระบบ");
       setLoading(false);
     }
   }
@@ -79,15 +139,16 @@ function LoginForm() {
             </div>
           )}
 
-          <form action={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-zinc-300 text-sm">
                 Email
               </Label>
               <Input
                 id="email"
-                name="email"
                 type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@example.com"
                 required
                 disabled={loading}
@@ -101,8 +162,9 @@ function LoginForm() {
               </Label>
               <Input
                 id="password"
-                name="password"
                 type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
                 disabled={loading}
