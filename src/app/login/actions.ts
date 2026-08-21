@@ -19,7 +19,13 @@ export async function loginAction(formData: FormData) {
   });
 
   if (error) {
-    return { error: "Email หรือ Password ไม่ถูกต้อง" };
+    if (error.message.includes("Email not confirmed")) {
+      return { error: "Email นี้ยังไม่ได้รับการยืนยัน (ไปที่ Supabase -> Users แล้วกด Confirm Email หรือปิด Confirm email)" };
+    }
+    if (error.message.includes("Invalid login credentials")) {
+      return { error: "Email หรือ Password ไม่ถูกต้อง" };
+    }
+    return { error: error.message };
   }
 
   redirect("/dashboard");
